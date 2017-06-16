@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -12,13 +11,46 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 )
 
 /*
 * Cli flags :
 *   -d : destination folder for files
+*		-i : update interval
  */
+
+var wg sync.WaitGroup
+
+func fetchWrapper(pair CurrencyPair, destination string) {
+	if queryResult, err := fetchJson(pair); err != nil {
+		log.Print(err)
+	} else {
+		writeCsv(destination, pair, queryResult)
+	}
+	wg.Done()
+}
+
+func forever(destination string, pairs []CurrencyPair, interval time.Duration) {
+//implement time.Ticker here
+	ticker := time.NewTicker(interval)
+	quit := make(chan struct{})
+	go func() {
+		for {
+			select {
+				case <-ticker.C:
+					for _, pair := range pairs {
+						wg.Add(1)
+						go fetchWrapper(pair, destination)
+					}
+				case <-quit:
+					ticker.Stop()
+					return
+			}
+		}
+	}()
+}
 
 func fetchJson(pair CurrencyPair) (QueryResult, error) {
 	url := "https://api.cryptonator.com/api/ticker/" + pair.Base + "-" + pair.Target + "/"
@@ -31,7 +63,6 @@ func fetchJson(pair CurrencyPair) (QueryResult, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%s\n", body)
 	var queryResult QueryResult
 	if err := json.Unmarshal(body, &queryResult); err != nil {
 		log.Fatal(err)
@@ -100,6 +131,15 @@ func main() {
 	usage_destination := "The folder in which to save the output files."
 	flag.StringVar(&destination, "d", default_destination, usage_destination)
 
+	default_interval := "30m"
+	var intervalStr string
+	usage_interval := "The interval of time before fetching data again. Formats such as 1h45m or 30s are valid. Accepted units are \"s\", \"m\" and \"h\""
+	flag.StringVar(&intervalStr, "i", default_interval, usage_interval)
+	interval, err := time.ParseDuration(intervalStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	flag.Parse()
 
 	var pairs []CurrencyPair
@@ -110,13 +150,12 @@ func main() {
 			pairs = append(pairs, newPair)
 		}
 	}
-
-	for _, pair := range pairs {
-		if queryResult, err := fetchJson(pair); err != nil {
-			log.Print(err)
-		} else {
-			fmt.Println(queryResult)
-			writeCsv(destination, pair, queryResult)
-		}
+	if len(pairs) == 0 {
+		log.Fatal("No valid currency pairs were provided. Exiting program")
 	}
+
+	wg.Add(1)
+	go fetchWrapper(pairs[0], destination)
+	go forever(destination, pairs, interval)
+	wg.Wait()
 }

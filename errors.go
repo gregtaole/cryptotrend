@@ -9,7 +9,8 @@ type MalformedCurrencyPairError struct {
 }
 
 type PairNotFoundError struct {
-	C CurrencyPair
+	C       CurrencyPair
+	Message string
 }
 
 func (e MalformedCurrencyPairError) Error() string {
@@ -17,5 +18,5 @@ func (e MalformedCurrencyPairError) Error() string {
 }
 
 func (e PairNotFoundError) Error() string {
-	return fmt.Sprintf("%v and/or %v is not a valid currency", e.C.Base, e.C.Target)
+	return fmt.Sprintf("%v : %v and/or %v is not a valid currency", e.Message, e.C.Base, e.C.Target)
 }

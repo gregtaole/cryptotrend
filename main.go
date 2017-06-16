@@ -11,14 +11,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 )
 
 /*
 * Cli flags :
 *   -d : destination folder for files
  */
-
-
 
 func fetchJson(pair CurrencyPair) (QueryResult, error) {
 	url := "https://api.cryptonator.com/api/ticker/" + pair.Base + "-" + pair.Target + "/"
@@ -37,13 +37,18 @@ func fetchJson(pair CurrencyPair) (QueryResult, error) {
 		log.Fatal(err)
 	}
 	if !queryResult.Success {
-		return queryResult, PairNotFoundError{C: pair}
+		return queryResult, PairNotFoundError{C: pair, Message: queryResult.Error}
 	}
 	return queryResult, nil
 }
 
-func writeCsv(pair CurrencyPair, query QueryResult) {
-	csv_file, err := os.OpenFile(pair.Base+pair.Target+".csv", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
+func writeCsv(destination string, pair CurrencyPair, query QueryResult) {
+	filename := time.Now().Format("20060102") + ".csv"
+	path := filepath.Join(destination, pair.Base+"_"+pair.Target)
+	if err := os.MkdirAll(path, 0744); err != nil {
+		log.Fatal(err)
+	}
+	csv_file, err := os.OpenFile(filepath.Join(path, filename), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -58,17 +63,33 @@ func writeCsv(pair CurrencyPair, query QueryResult) {
 		if err2 := writer.Write([]string{"timestamp", "price", "volume", "change"}); err2 != nil {
 			log.Fatal("writeCsv, unable to write CSV headers", err2)
 		}
+		if err := writer.Write(query.ToArray()); err != nil {
+			log.Fatal(err)
+		}
+		writer.Flush()
+		if err := writer.Error(); err != nil {
+			log.Fatal(err)
+		}
 	} else if err != nil {
 		log.Fatal(err)
-	}
-
-	if err := writer.Write(query.ToArray()); err != nil {
-		log.Fatal(err)
-	}
-
-	writer.Flush()
-	if err := writer.Error(); err != nil {
-		log.Fatal(err)
+	} else {
+		records, err := reader.ReadAll()
+		if err != nil {
+			log.Fatal(err)
+		}
+		timestamp, err := strconv.Atoi(records[len(records)-1][0])
+		if err != nil {
+			log.Fatal(err)
+		}
+		if timestamp < query.Timestamp {
+			if err := writer.Write(query.ToArray()); err != nil {
+				log.Fatal(err)
+			}
+			writer.Flush()
+			if err := writer.Error(); err != nil {
+				log.Fatal(err)
+			}
+		}
 	}
 }
 
@@ -95,7 +116,7 @@ func main() {
 			log.Print(err)
 		} else {
 			fmt.Println(queryResult)
-			writeCsv(pair, queryResult)
+			writeCsv(destination, pair, queryResult)
 		}
 	}
 }

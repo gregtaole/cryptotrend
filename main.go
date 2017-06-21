@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -33,23 +34,14 @@ func fetchWrapper(pair CurrencyPair, destination string) {
 }
 
 func forever(destination string, pairs []CurrencyPair, interval time.Duration) {
-//implement time.Ticker here
 	ticker := time.NewTicker(interval)
-	quit := make(chan struct{})
-	go func() {
-		for {
-			select {
-				case <-ticker.C:
-					for _, pair := range pairs {
-						wg.Add(1)
-						go fetchWrapper(pair, destination)
-					}
-				case <-quit:
-					ticker.Stop()
-					return
-			}
+	for now := range ticker.C {
+		fmt.Println(now)
+		for _, pair := range pairs {
+			wg.Add(1)
+			go fetchWrapper(pair, destination)
 		}
-	}()
+	}
 }
 
 func fetchJson(pair CurrencyPair) (QueryResult, error) {
@@ -135,12 +127,13 @@ func main() {
 	var intervalStr string
 	usage_interval := "The interval of time before fetching data again. Formats such as 1h45m or 30s are valid. Accepted units are \"s\", \"m\" and \"h\""
 	flag.StringVar(&intervalStr, "i", default_interval, usage_interval)
+
+	flag.Parse()
+
 	interval, err := time.ParseDuration(intervalStr)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	flag.Parse()
 
 	var pairs []CurrencyPair
 	for _, arg := range flag.Args() {
@@ -155,7 +148,6 @@ func main() {
 	}
 
 	wg.Add(1)
-	go fetchWrapper(pairs[0], destination)
 	go forever(destination, pairs, interval)
 	wg.Wait()
 }
